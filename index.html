@@ -19,12 +19,250 @@
             <a href="https://twitter.com/matthew_d_green/">Matthew Green</a>, and <a href="https://avirubin.com">Avi
                 Rubin</a>.
         </p>
+        <p><em>Read on to find out about the workings of our system, but there’s a TL;DR at the bottom!</em></p>
         <p>This work is to appear in the proceedings of the ACM Conference on Computer and Communications Security 2021
             (CCS '21). In the meantime, you can read a preprint of our work on <a
-                href="https://eprint.iacr.org/2021/686">ePrint</a>. A blog post summarizing our work is coming soon.</p>
+                href="https://eprint.iacr.org/2021/686">ePrint</a>.</p>
         <p>We have a <a href="https://colab.research.google.com/gist/tusharjois/ec8603b711ff61e09167d8fef37c9b86">demo
                 of our work</a> available as a Google Colaboratory notebook. This will allow you to try out our Meteor
             codebase using GPU acceleration. Make sure to read the directions in the notebook to get started!</p>
+        <hr>
+        <p>The widespread use of cryptography has been a boon to the privacy of users around the world. Systems like <a
+                href="https://www.signal.org/">Signal</a> and <a href="https://www.whatsapp.com/">WhatsApp</a> use
+            strong, end-to-end encryption with hardware-backed storage capable of resisting attack even from <a
+                href="https://signal.org/bigbrother/central-california-grand-jury/">nation-state actors</a>. However,
+            encrypted communication is distinct; it’s clear when encrypted communication is taking place. A system like
+            WhatsApp is <a href="https://www.nytimes.com/2017/09/25/business/china-whatsapp-blocked.html">easily
+                blocked</a> by censors looking to stifle communication, and censors have experimented with <a
+                href="https://arstechnica.com/gadgets/2021/04/russias-twitter-throttling-may-give-censors-never-before-seen-capabilities/">slowing
+                down connections</a> to block services.</p>
+        <h2 id="evading-censors">Evading censors</h2>
+        <p>Network censorship is becoming increasingly nefarious. China’s <a
+                href="https://en.wikipedia.org/wiki/Great_Firewall">Great Firewall</a>, for example, not only prevents
+            access to content deemed subversive, but also <a
+                href="https://blog.torproject.org/learning-more-about-gfws-active-probing-system">actively denies</a>
+            access to censorship circumvention tools such as <a href="https://www.torproject.org/">Tor</a>. Our current
+            suite of tools to evade censors uses <em>steganography</em>, a technique by which a secret message (the
+            <em>stegotext</em>) is hidden in a different one (the <em>covertext</em>). The point of steganography is
+            that the censor doesn’t realize we’re hiding <em>stegotext</em> in <em>covertext</em>.
+        </p>
+        <h3 id="an-example">An example</h3>
+        <p>Take the following image:</p>
+        <p><img src="hidden.png" alt="What is this image hiding?" width="200" /></p>
+        <p>We’ve taken a sample image and used an online <a
+                href="https://stylesuxx.github.io/steganography/">steganographic encoder</a> to add a message to the
+            pixels underlying it. We can send this in a messaging app to another individual, and then they can use the
+            same process to decode the message. When piped back into a <a
+                href="https://stylesuxx.github.io/steganography/">steganographic decoder</a>, we see that this image
+            encodes the message “<code>Attack@Dawn</code>”.</p>
+        <p>For comparison, here is the original image, without any steganography applied:</p>
+        <p><img src="peppers.png" alt="The original image, Peppers, from the USC-SIPI Image Database." width="200" />
+        </p>
+        <p>The differences between these two images are miniscule and imperceptible to the human eye. However, if we
+            compute the pixel difference between the two images, we can distinctly make out that pixels in the top left
+            are changed.</p>
+        <p><img src="diff.png" alt="The difference between the Peppers image and our steganography image."
+                width="200" /></p>
+        <p>Ideally, the censor shouldn’t be able to figure out if the image you are sending has a hidden message. They
+            could consider blocking all images outright because of the potential for hidden messages, but this is
+            impractical. It could cause widespread outrage – or hurt business interests. Thus, the censor will allow
+            pictures, and thereby this hidden communication as well.</p>
+        <h3 id="in-the-real-world">In the real world</h3>
+        <p>This example of image steganography is fun and illustrative, but isn’t secure. In formal definitions of
+            steganography, we assume that the adversary is attempting to figure out if steganography is being used at
+            all. This example fails that test, since an adversary can detect the presence of steganography with a simple
+            pixel difference, as we’ve shown above.</p>
+        <p>Applications like Tor use more robust techniques, such as <a
+                href="https://www.cs.kau.se/philwint/scramblesuit/">ScrambleSuit</a> and <a
+                href="https://gitlab.com/yawning/obfs4">obfs4</a>, to hide its traffic. These techniques
+            take Tor traffic and hide it in a random (or random-looking)
+            stream of data. In other words, an adversary cannot distinguish between stegotext and normal covertext,
+            maintaining security.</p>
+        <p>There’s no guarantee though that a random-looking stream of data will exist, though. A particularly audacious
+            censor could block <em>all</em> communication that wasn’t explicitly readable. If a communication does not
+            look like structured text and images, for example, the censor could just block it. While studies of the
+            Great Firewall are incomplete, but there is at least <a
+                href="https://gfw.report/blog/gfw_esni_blocking/en/">anecdotal evidence</a> of it even blocking mundane
+            TLS 1.3 connections. Censors could start expecting plaintext communication overnight, rendering all of our
+            current practical techniques moot.</p>
+        <h2 id="formal-guarantees">Formal guarantees</h2>
+        <p>To begin to solve this problem, we can turn to provable techniques known as <em>universal steganography</em>.
+            These techniques rely on a <em>sampler</em> functionality that outputs a <em>token</em> that could be a
+            member of a <em>covertext distribution</em>. For example, if we wanted to use English text as our covertext,
+            tokens would be a letter or a word. Universal steganography loosely works as follows:</p>
+        <ol type="1">
+            <li>Take your message <code>m</code> and encrypt it with a pseudorandom cipher to get <code>x</code></li>
+            <li>For each bit <code>x_i</code> of the encrypted message <code>x</code>:
+                <ol type="1">
+                    <li>Sample a random token <code>c_i</code> from the covertext distribution</li>
+                    <li>Apply an unbiased hash function <code>h</code> to the sampled token.
+                        <ol type="1">
+                            <li>If <code>h(c_i) = x_i</code>, output <code>c_i</code> and proceed to the next
+                                <code>x_i</code>
+                            </li>
+                            <li>Else, resample <code>c_i</code> and redo the hash comparison</li>
+                        </ol>
+                    </li>
+                </ol>
+            </li>
+        </ol>
+        <p>The recipient on the other side can do the following to recover the message:</p>
+        <ol type="1">
+            <li>For each token <code>c_i</code> in the stegotext:
+                <ol type="1">
+                    <li>Compute <code>h(c_i) = x_i</code></li>
+                </ol>
+            </li>
+            <li>Collect the bits <code>x_i</code> into the encrypted message <code>x</code></li>
+            <li>Decrypt <code>x</code> to recover the original function <code>m</code></li>
+        </ol>
+        <p>Notably, the censor in between cannot tell if a message has a stegotext inside of it. The bits of
+            <code>x_i</code> look random, due to <a
+                href="https://en.wikipedia.org/wiki/Pseudorandom_function_family">pseudorandomness</a> of the cipher.
+            Since <code>h</code> introduces no bias, the tokens <code>c_i</code> selected look the same as those
+            normally in the covertext distribution.
+        </p>
+        <h2 id="barriers-to-steganography">Barriers to steganography</h2>
+        <p>This seems like a perfect solution for our problem: hiding a message inside of another one, with a
+            cryptographic guarantee attached. The key to this setup, however, is knowing the covertext distribution. In
+            reality, the distribution of a language such as English is fundamentally unknowable – language evolves and
+            cannot be perfectly captured as a set of probabilities.</p>
+        <p>To get around this limitation, we can <em>approximate</em> the distribution of the English language. We can’t
+            claim to know all about the language, but we can build <em>generative models</em> that are trained on vast
+            corpora of English language text and in turn can generate new text. One of the state of the art techniques
+            in generative modeling is the transformer, a type of neural network. Examples include OpenAI’s <a
+                href="https://openai.com/blog/better-language-models/">GPT-2</a> and <a
+                href="https://arxiv.org/abs/2005.14165">GPT-3</a> architectures, which generate <a
+                href="https://aiwriter.app/">fairly realistic text</a>. Here’s an example of some text that GPT-2 can
+            generate, when fed the first paragraph of this blog post:</p>
+        <blockquote>
+            <p>But as the advances in digital communication and privacy continue, and our needs expand, it’s becoming
+                increasingly clear that native digital tools are not enough to protect our privacy online. The anonymity
+                of “112</p>
+        </blockquote>
+        <p>The above is an output that is based on an estimate of the English language, but it’s pretty good – and these
+            types of models are getting <a
+                href="https://www.wired.com/story/cerebras-chip-cluster-neural-networks-ai/">even better</a>.</p>
+        <p>GPT-2 seems like a good fit to be our approximate sampler for steganography. We also have to be careful about
+            bias, though. Universal steganography requires the use of unbiased hash functions. However, in practice, we
+            have to use cryptographic hash functions, which can potentially introduce bias when sampler distributions
+            have low entropy. GPT-2 is not immune to this; the below instantaneous entropy chart shows that GPT-2 goes
+            into periods of low entropy as it samples different tokens.</p>
+        <p><img src="cx_entropy.png"
+                alt="Instantaneous entropy for GPT-2 over time for 4 samples. Entropy oscillates wildly with token position."
+                width="400" /></p>
+        <p>This behavior is not inherent to the GPT-2 alone. Consider the following statement:</p>
+        <blockquote>
+            <p>The largest carnivore of the Cretaceous period was the Tyrannosaurus</p>
+        </blockquote>
+        <p>The most appropriate token here is “Rex”, and there isn’t a clear alternative – a low entropy situation.
+            Regardless of sampler, we encounter situations like these in natural language. Thus, the entropy assumptions
+            of universal steganography are also impractical. Any solution that attempts to utilize a natural language
+            distribution (or its approximation) needs to handle these questions.</p>
+        <h2 id="meteor">Meteor</h2>
+        <p>This brings us to our work, Meteor. We use the GPT-2 as a sampler, approximating the English language. At the
+            same time, we ensure that, as we sample tokens, we do not introduce bias.</p>
+        <h3 id="encoding-and-decoding">Encoding and decoding</h3>
+        <p>Suppose the following setup, in which a sender and a receiver share a key and a generative model. For a given
+            <em>context</em> (initial state), the generative model will output a prediction of the next word, based on
+            probabilities in a <em>token distribution</em>.
+        </p>
+        <p><img src="meteor_1.svg" alt="A sender and a receiver who share a secret key and a generative model." /></p>
+        <p>When the sender wishes to encode a message of size <code>n</code> bits, they first start by generating a
+            <em>random mask</em> (specifically, from a keyed <a
+                href="https://www.cs.jhu.edu/~abhishek/classes/CS600-642-442-Fall2018/L04.pdf#page17">pseudorandom
+                generator</a>), or a (pseudo-)random sequence of bits, of size <code>n</code> and <a
+                href="https://en.wikipedia.org/wiki/Exclusive_or#Bitwise_operation">XOR</a>ing it to the plaintext
+            message. The sender then takes this “masked” message and uses it to sample a token from the distribution.
+            For now, we’ll skip over <em>how</em> the token is sampled, but once we have it, we append it to the
+            stegotext to send. Each token encodes some number of bits <code>b</code>. We repeat this process for the
+            next <code>n - b</code> bits, up until all <code>n</code> bits are encoded by Meteor.
+        </p>
+        <p><img src="meteor_2.svg" alt="The sender's process for encoding a plaintext message into stegotext." /></p>
+        <p>Decoding proceeds similarly. Upon receiving the stegotext, the receiver starts sampling from the model. The
+            receiver compares the sampled tokens to the actual token from the stegotext. This allows the receiver to
+            extract the encoded bits, and repeats sampling and comparing tokens to extract all of the bits from the
+            stegotext.</p>
+        <p><img src="meteor_3.svg" alt="The receiver's process for decoding stegotext in a plaintext message." /></p>
+        <h3 id="meteor-sampling">Meteor sampling</h3>
+        <p>We’ve seen that Meteor can effectively utilize the GPT-2. Now let’s go back to how Meteor samples a token for
+            use in stegotext. This section is a bit more technical than the rest, but the intuition follows from the
+            previous sections.</p>
+        <p>We know that our generative model outputs a set of tokens and their associated probabilities. We can order
+            these into a cumulative probability distribution, as shown below.</p>
+        <p><img src="sampling_1.svg"
+                alt="We first organize the output of the model into a cumulative probability distribution." /></p>
+        <p>We map the space of masked messages (<em>i.e.</em>, bit strings) to this cumulative distribution. When we
+            want to sample, we utilize our mapped message to index into the distribution. Based on the cumulative
+            probability, we select a new token.</p>
+        <p><img src="sampling_2.svg" alt="Our encrypted message indexes to somewhere within this distribution." /></p>
+        <p>Because we map the entire encrypted message space over the distribution, different messages will select
+            different tokens. However, there may be some overlap because the domain (all possible messages) is much
+            larger than the range (the possible tokens).</p>
+        <p><img src="sampling_3.svg"
+                alt="Different encrypted messages will index to different places in the distribution." />
+        </p>
+        <p>The number of bits encoded depends on the organization of the distribution. For example, suppose for a 5 bit
+            message, a token <code>was</code> is output for bit strings between <code>01001</code> and
+            <code>01110</code>. This means that any time the token <code>was</code> is output, the string is prefixed by
+            <code>01</code> – encoding two bits of information into the stegotext.
+        </p>
+        <p><img src="sampling_4.svg"
+                alt="Depending on the token's location in the distribution, you can find out something about the message." />
+        </p>
+        <p>While we expect to encode bits at each run of the algorithm, sometimes we cannot. This might be because our
+            message bits land in a region of the distribution that do not yield any information about the underlying
+            encoded message. Using our example, if the token <code>did</code> is valid for bit strings between
+            <code>01111</code> and <code>10011</code>, we do not learn anything about the message from the token – they
+            do not share a prefix.
+        </p>
+        <p><img src="sampling_5.svg" alt="You aren't guaranteed to find something out with a token." /></p>
+        <p>When we are in situations of low entropy, we simply continue, and hopefully at the next sampling of the
+            algorithm we have enough entropy to encode bits via the prefix method described above. This allows us to
+            handle cases with low entropy without introducing bias, even if we cannot encode a bit every time we pull a
+            token from the generative model. <a href="https://en.wikipedia.org/wiki/Rejection_sampling">Rejection
+                sampling</a> and friends may allow us to encode bits at every step of the algorithm, but introduce too
+            much bias to be secure.</p>
+        <p>The proof of security of Meteor boils down to the use of a pseudorandom generator to mask the message bits,
+            making the actual mask used for Meteor sampling indistinguishable from the random number used in standard
+            GPT-2 sampling. More details can be found in our <a href="https://eprint.iacr.org/2021/686">paper</a>.</p>
+        <h3 id="an-example-1">An example</h3>
+        <p>We use our <a
+                href="https://colab.research.google.com/gist/tusharjois/ec8603b711ff61e09167d8fef37c9b86">demo</a> for
+            the following example. Because of machine
+            factors, we cannot guarantee reproducibility, though. Using the first paragraph of this post as context and
+            the message “<code>hello, world!</code>”, Meteor outputs the following stegotext:</p>
+        <blockquote>
+            <p>But with 24/7 surveillance, logs, and surveillance cameras putting netizens to shame, humans are becoming
+                increasingly reliant on alternative means of social connected</p>
+        </blockquote>
+        <p>Clearly, the stegotext is longer than the original message. However, it’s reasonably acceptable, given the
+            context, and isn’t so long that the system is unusable. Meteor uses a number of techniques to make this
+            encoding efficient. We managed to get Meteor running on a desktop with a dedicated GPU, a laptop with no
+            GPU, and an iPhone. Please read our <a href="https://eprint.iacr.org/2021/686">paper</a> for more details.
+        </p>
+        <h2 id="tldr">TL;DR</h2>
+        <p>Meteor, in four tweets:</p>
+        <ul>
+            <li>Steganography – hiding the presence of a message, in addition to its content – is necessary with
+                censorship efforts on the rise around the globe.</li>
+            <li>Classical steganography has too many assumptions to be perfectly deployed in practice for natural
+                language distributions, such as English.</li>
+            <li>Our work, Meteor, is a symmetric-key steganography algorithm that encode &amp; decodes from generative
+                approximations of natural language.</li>
+            <li>Meteor builds upon the best ideas from classical steganography to deploy a system that is both practical
+                and provably-secure.</li>
+        </ul>
+        <p>If you want to find out more about Meteor, you can take a look at our <a
+                href="https://eprint.iacr.org/2021/686">academic paper</a>. Our paper also includes a discussion of
+            other forms of steganography (like <a
+                href="https://www-users.cse.umn.edu/~hoppernj/public_key_steganography.pdf">public-key</a>) and a
+            comparison of Meteor to prior work in the NLP field. We also have a <a
+                href="https://colab.research.google.com/gist/tusharjois/ec8603b711ff61e09167d8fef37c9b86">demo
+                version</a> of Meteor on Google Colab if you’d like to try it out. <a
+                href="https://twitter.com/intent/tweet?text=%0a%0ahttps://meteorfrom.space/%20by%20@gkaptchuk%2C%20@tusharjois%2C%20@matthew_d_green%2C%20and%20@avirubin">Tweet</a>
+            at us if you’re interested in our project and want to talk about it some more!</p>
+
     </div>
 
 
